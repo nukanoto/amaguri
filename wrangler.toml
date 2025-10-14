@@ -1,0 +1,21 @@
+name = "daken-imap-worker"
+main = "src/index.ts"
+compatibility_date = "2025-10-14"
+compatibility_flags = ["tcp_sockets"]
+
+workers_dev = true
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[kv_namespaces]]
+binding = "EMAIL_STATE"
+id = "REPLACE_WITH_PRODUCTION_KV_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_ID"
+
+[vars]
+IMAP_HOST = "imap.example.com"
+IMAP_PORT = "993"
+IMAP_SECURE = "on"
+IMAP_USERNAME = "user@example.com"
+IMAP_MAILBOX = "INBOX"

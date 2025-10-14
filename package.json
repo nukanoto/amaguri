@@ -1,0 +1,20 @@
+{
+  "name": "daken",
+  "version": "1.0.0",
+  "description": "Cloudflare Workers cron で IMAP を確認し Discord へ通知するワーカー",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler types"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.15.0",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^3.80.0"
+  }
+}
