@@ -1,29 +1,35 @@
-import { MAX_HASH_HISTORY, STATE_KEY } from "./constants";
+import { MAX_HASH_HISTORY } from "./constants";
 import { notifyDiscord } from "./services/discord";
+import { EmailStateStore } from "./services/emailStateStore";
 import { ImapClient } from "./services/imapClient";
-import type { Env, MailSummary, WorkerState } from "./types";
+import type { Env, MailSummary } from "./types";
 
 export async function runOnce(env: Env, now: Date) {
-  if (!env.IMAP_HOST || !env.IMAP_PORT || !env.IMAP_USERNAME || !env.IMAP_PASSWORD) {
-    throw new Error("IMAP 接続設定が不足しています。wrangler.toml と secrets を確認してください。");
+  if (!env.IMAP_HOST || !env.IMAP_USERNAME || !env.IMAP_PASSWORD) {
+    throw new Error(
+      "IMAP 接続設定が不足しています。環境変数 (wrangler secret) を確認してください。",
+    );
   }
   if (!env.DISCORD_WEBHOOK_URL) {
-    throw new Error("DISCORD_WEBHOOK_URL が設定されていません。wrangler secret put DISCORD_WEBHOOK_URL を実行してください。");
+    throw new Error(
+      "DISCORD_WEBHOOK_URL が設定されていません。環境変数 (wrangler secret) を確認してください。",
+    );
   }
 
-  const state = await env.EMAIL_STATE.get<WorkerState>(STATE_KEY, "json");
+  const store = new EmailStateStore(env.EMAIL_STATE);
+  const state = await store.load();
   const lastCheckTime = state?.lastCheck ? Date.parse(state.lastCheck) : 0;
   const seenHashes = new Set(state?.hashes ?? []);
 
   const imap = new ImapClient({
     host: env.IMAP_HOST,
-    port: Number(env.IMAP_PORT || "993"),
+    port: resolveImapPort(env.IMAP_PORT),
     secure: normalizeSecure(env.IMAP_SECURE),
     username: env.IMAP_USERNAME,
     password: env.IMAP_PASSWORD,
   });
 
-  const mailbox = env.IMAP_MAILBOX || "INBOX";
+  const mailbox = env.IMAP_MAILBOX?.trim() || "INBOX";
   const newMessages: MailSummary[] = [];
 
   try {
@@ -68,13 +74,10 @@ export async function runOnce(env: Env, now: Date) {
     mergedHashes.splice(0, mergedHashes.length - MAX_HASH_HISTORY);
   }
 
-  await env.EMAIL_STATE.put(
-    STATE_KEY,
-    JSON.stringify({
-      lastCheck: now.toISOString(),
-      hashes: mergedHashes,
-    } satisfies WorkerState),
-  );
+  await store.save({
+    lastCheck: now.toISOString(),
+    hashes: mergedHashes,
+  });
 
   return {
     checked: newMessages.length,
@@ -89,4 +92,17 @@ function normalizeSecure(value?: string): "on" | "starttls" | "off" {
     return normalized;
   }
   return "on";
+}
+
+function resolveImapPort(value?: string): number {
+  if (!value || !value.trim()) {
+    return 993;
+  }
+
+  const port = Number.parseInt(value, 10);
+  if (!Number.isFinite(port) || port <= 0) {
+    throw new Error("IMAP_PORT 環境変数が不正です。正の整数を指定してください。");
+  }
+
+  return port;
 }

@@ -3,9 +3,7 @@ import type { Socket } from "cloudflare:sockets";
 import type { MailSummary } from "../types";
 import { hashString } from "../utils/hash";
 
-type ImapSegment =
-  | { type: "line"; text: string }
-  | { type: "literal"; text: string };
+type ImapSegment = { type: "line"; text: string } | { type: "literal"; text: string };
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -22,7 +20,13 @@ export class ImapClient {
   private buffer = "";
   private tagCounter = 1;
 
-  constructor(opts: { host: string; port: number; secure: "on" | "starttls" | "off"; username: string; password: string }) {
+  constructor(opts: {
+    host: string;
+    port: number;
+    secure: "on" | "starttls" | "off";
+    username: string;
+    password: string;
+  }) {
     this.host = opts.host;
     this.port = opts.port;
     this.secure = opts.secure;
@@ -51,7 +55,9 @@ export class ImapClient {
   }
 
   async login(): Promise<void> {
-    const { tag, segments } = await this.sendCommand(`LOGIN ${quoteString(this.username)} ${quoteString(this.password)}`);
+    const { tag, segments } = await this.sendCommand(
+      `LOGIN ${quoteString(this.username)} ${quoteString(this.password)}`,
+    );
     this.assertOk(tag, segments, "LOGIN");
   }
 
@@ -65,13 +71,18 @@ export class ImapClient {
     const { tag, segments } = await this.sendCommand(`UID SEARCH SINCE ${since}`);
     this.assertOk(tag, segments, "SEARCH");
 
-    const searchLine = segments.find((segment) => segment.type === "line" && segment.text.startsWith("* SEARCH"));
+    const searchLine = segments.find(
+      (segment) => segment.type === "line" && segment.text.startsWith("* SEARCH"),
+    );
     if (!searchLine) {
       return [];
     }
 
     const parts = searchLine.text.split(" ").slice(2);
-    return parts.filter(Boolean).map((part) => Number.parseInt(part, 10)).filter((n) => Number.isFinite(n));
+    return parts
+      .filter(Boolean)
+      .map((part) => Number.parseInt(part, 10))
+      .filter((n) => Number.isFinite(n));
   }
 
   async fetchSummary(uid: number): Promise<MailSummary | null> {
@@ -80,7 +91,9 @@ export class ImapClient {
     );
     this.assertOk(tag, segments, "FETCH");
 
-    const fetchLine = segments.find((segment) => segment.type === "line" && segment.text.startsWith("* "));
+    const fetchLine = segments.find(
+      (segment) => segment.type === "line" && segment.text.startsWith("* "),
+    );
     const literal = segments.find((segment) => segment.type === "literal");
     if (!fetchLine || !literal) {
       return null;
@@ -222,7 +235,20 @@ export class ImapClient {
 }
 
 function formatImapSince(date: Date): string {
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
   const day = String(date.getUTCDate()).padStart(2, "0");
   const month = months[date.getUTCMonth()];
   const year = date.getUTCFullYear();

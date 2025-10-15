@@ -1,7 +1,7 @@
 import type { ExportedHandler } from "@cloudflare/workers-types";
-import { STATE_KEY } from "./constants";
 import { runOnce } from "./monitor";
-import type { Env, WorkerState } from "./types";
+import { EmailStateStore } from "./services/emailStateStore";
+import type { Env } from "./types";
 
 const worker: ExportedHandler<Env> = {
   async scheduled(event, env, ctx) {
@@ -14,7 +14,8 @@ const worker: ExportedHandler<Env> = {
     }
 
     if (request.method === "GET") {
-      const state = await env.EMAIL_STATE.get<WorkerState>(STATE_KEY, "json");
+      const store = new EmailStateStore(env.EMAIL_STATE);
+      const state = await store.load();
       return Response.json({
         ok: true,
         lastCheck: state?.lastCheck ?? null,
