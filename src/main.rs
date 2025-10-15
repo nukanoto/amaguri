@@ -1,6 +1,7 @@
 use std::env;
 
 use anyhow::Result;
+use mailparse::parse_mail;
 use native_tls::TlsConnector;
 
 struct Config {
@@ -59,7 +60,22 @@ async fn main() -> Result<()> {
         .expect("message was not valid utf-8")
         .to_string();
 
-    println!("{body}");
+    let parsed = parse_mail(body.as_bytes())?;
+    let plain_body = if parsed.subparts.is_empty() {
+        if parsed.ctype.mimetype != "text/plain" {
+            None
+        } else {
+            parsed.get_body().ok()
+        }
+    } else {
+        parsed
+            .subparts
+            .iter()
+            .find(|x| x.ctype.mimetype == "text/plain")
+            .and_then(|x| x.get_body().ok())
+    };
+
+    println!("メールの内容:\n{}", plain_body.as_deref().unwrap_or("本文なし"));
 
     // be nice to the server and log out
     imap_session.logout()?;
