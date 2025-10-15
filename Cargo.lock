@@ -150,6 +150,8 @@ dependencies = [
  "mailparse",
  "native-tls",
  "reqwest",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
