@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "wrangler types"
+    "types": "wrangler types",
+    "check": "pnpm run types && biome check ."
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.15.0",
   "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
     "@cloudflare/workers-types": "^4.20241022.0",
     "typescript": "^5.6.3",
     "wrangler": "^3.80.0"
