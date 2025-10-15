@@ -1,12 +1,11 @@
 import { connect } from "cloudflare:sockets";
-import type { Socket } from "cloudflare:sockets";
 import type { MailSummary } from "../types";
 import { hashString } from "../utils/hash";
 
 type ImapSegment = { type: "line"; text: string } | { type: "literal"; text: string };
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: false });
+const decoder = new TextDecoder("utf-8", { fatal: false, ignoreBOM: false });
 
 export class ImapClient {
   private readonly host: string;
@@ -39,11 +38,16 @@ export class ImapClient {
       return;
     }
 
-    this.socket = connect({
-      hostname: this.host,
-      port: this.port,
-      secureTransport: this.secure,
-    });
+    this.socket = connect(
+      {
+        hostname: this.host,
+        port: this.port,
+      },
+      {
+        secureTransport: this.secure,
+        allowHalfOpen: false,
+      },
+    );
 
     this.reader = this.socket.readable.getReader();
     this.writer = this.socket.writable.getWriter();

@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "XDG_CONFIG_HOME=.config wrangler types",
-    "check": "pnpm run types && biome check --write ."
+    "check": "tsc --noEmit && biome check --write ."
   },
   "keywords": [],
   "author": "",

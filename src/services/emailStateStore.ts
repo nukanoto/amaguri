@@ -1,4 +1,3 @@
-import type { D1Database } from "@cloudflare/workers-types";
 import { STATE_KEY } from "../constants";
 import type { WorkerState } from "../types";
 

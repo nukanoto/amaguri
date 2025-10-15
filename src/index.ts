@@ -1,4 +1,3 @@
-import type { ExportedHandler } from "@cloudflare/workers-types";
 import { runOnce } from "./monitor";
 import { EmailStateStore } from "./services/emailStateStore";
 import type { Env } from "./types";
