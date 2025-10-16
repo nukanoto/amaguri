@@ -175,6 +175,8 @@ async fn send_discord_notification(
     subject: &str,
     content: &str,
 ) -> Result<()> {
+    let limited_content = truncate_utf8_to_char_limit(content, 1500);
+
     let req_body = WebhookBody {
         username: Some(from.to_string()),
         avatar_url: None,
@@ -187,7 +189,7 @@ async fn send_discord_notification(
                 url: None,
                 icon_url: None,
             }),
-            description: content.to_string(),
+            description: limited_content,
         }]),
     };
 
@@ -202,4 +204,18 @@ async fn send_discord_notification(
     }
 
     Ok(())
+}
+
+fn truncate_utf8_to_char_limit(source: &str, max_chars: usize) -> String {
+    let mut iter = source.char_indices();
+    let mut count = 0;
+
+    while let Some((idx, _)) = iter.next() {
+        if count == max_chars {
+            return source[..idx].to_string();
+        }
+        count += 1;
+    }
+
+    source.to_string()
 }
