@@ -55,7 +55,8 @@ async fn main() -> Result<()> {
     loop {
         let mut idle = imap_session.idle();
         idle.init().await?;
-        let (idle_wait, _) = idle.wait();
+
+        let (idle_wait, interrupt) = idle.wait();
         let idle_result = idle_wait.await?;
         imap_session = idle.done().await?;
 
@@ -140,6 +141,8 @@ async fn main() -> Result<()> {
                 last_seen_uid = Some(uid);
             }
         }
+
+        drop(interrupt);
     }
 }
 
