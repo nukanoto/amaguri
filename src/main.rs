@@ -1,10 +1,13 @@
 use std::env;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+use async_imap::extensions::idle::IdleResponse;
+use async_native_tls::TlsConnector;
+use futures::TryStreamExt;
 use imap::types::Uid;
 use mailparse::{MailHeaderMap, parse_mail};
-use native_tls::TlsConnector;
 use serde::{Deserialize, Serialize};
+use tokio::net::TcpStream;
 
 struct Config {
     imap_host: String,
@@ -13,6 +16,129 @@ struct Config {
     imap_username: String,
     imap_password: String,
     discord_webhook_url: String,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let config = Config {
+        imap_host: env::var("IMAP_HOST").expect("IMAP_HOST must be set"),
+        imap_port: env::var("IMAP_PORT")
+            .unwrap_or_default()
+            .parse::<u16>()
+            .unwrap_or(993),
+        imap_domain: env::var("IMAP_DOMAIN").expect("IMAP_DOMAIN must be set"),
+        imap_username: env::var("IMAP_USERNAME").expect("IMAP_USERNAME must be set"),
+        imap_password: env::var("IMAP_PASSWORD").expect("IMAP_PASSWORD must be set"),
+        discord_webhook_url: env::var("DISCORD_WEBHOOK_URL")
+            .expect("DISCORD_WEBHOOK_URL must be set"),
+    };
+
+    let imap_addr = (config.imap_host.clone(), config.imap_port);
+    let tcp_stream = TcpStream::connect(imap_addr).await?;
+    let tls = TlsConnector::new();
+    let tls_stream = tls.connect(&config.imap_domain, tcp_stream).await?;
+
+    let client = async_imap::Client::new(tls_stream);
+
+    // the client we have here is unauthenticated.
+    // to do anything useful with the e-mails, we need to log in
+    let mut imap_session = client
+        .login(config.imap_username, config.imap_password)
+        .await
+        .map_err(|(err, _client)| err)?;
+
+    imap_session.select("INBOX").await?;
+    let mut last_seen_uid = imap_session.uid_search("1:*").await?.into_iter().max();
+
+    loop {
+        let mut idle = imap_session.idle();
+        idle.init().await?;
+        let (idle_wait, _) = idle.wait();
+        let idle_result = idle_wait.await?;
+        imap_session = idle.done().await?;
+
+        if let IdleResponse::NewData(_) = idle_result {
+            let search_query = match last_seen_uid {
+                Some(uid) => format!("{}:*", uid + 1),
+                None => "1:*".to_string(),
+            };
+
+            let mut new_uids: Vec<Uid> = imap_session
+                .uid_search(&search_query)
+                .await?
+                .into_iter()
+                .filter(|uid| last_seen_uid.map_or(true, |last| *uid > last))
+                .collect();
+
+            if new_uids.is_empty() {
+                continue;
+            }
+
+            new_uids.sort_unstable();
+
+            for uid in new_uids {
+                let mut fetches = imap_session
+                    .uid_fetch(uid.to_string(), "(UID RFC822)")
+                    .await?;
+
+                while let Some(fetch) = fetches.try_next().await? {
+                    let body_bytes = match fetch.body() {
+                        Some(bytes) => bytes,
+                        None => {
+                            eprintln!("Failed to fetch body for UID {}.", uid);
+                            continue;
+                        }
+                    };
+
+                    let parsed = parse_mail(body_bytes)?;
+                    let plain_body = if parsed.subparts.is_empty() {
+                        if parsed.ctype.mimetype != "text/plain" {
+                            None
+                        } else {
+                            parsed.get_body().ok()
+                        }
+                    } else {
+                        parsed
+                            .subparts
+                            .iter()
+                            .find(|x| x.ctype.mimetype == "text/plain")
+                            .and_then(|x| x.get_body().ok())
+                    };
+
+                    let from = parsed
+                        .get_headers()
+                        .get_first_value("From")
+                        .unwrap_or_else(|| "Unknown sender".to_string());
+
+                    let subject = parsed
+                        .get_headers()
+                        .get_first_value("Subject")
+                        .unwrap_or_else(|| "No subject".to_string());
+
+                    let plain_body_text = plain_body.as_deref();
+                    let body_text = plain_body_text.unwrap_or("No body");
+
+                    println!("=== New Email ===");
+                    println!("UID: {}", uid);
+                    println!("From: {}", from);
+                    println!("Subject: {}", subject);
+                    println!("Body:\n{}\n", body_text);
+
+                    let notification_body = plain_body_text.unwrap_or("_No Content_");
+
+                    send_discord_notification(
+                        &config.discord_webhook_url,
+                        &from,
+                        &subject,
+                        notification_body,
+                    )
+                    .await?;
+                }
+
+                last_seen_uid = Some(uid);
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -38,129 +164,37 @@ struct EmbedAuthor {
     icon_url: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config = Config {
-        imap_host: env::var("IMAP_HOST").expect("IMAP_HOST must be set"),
-        imap_port: env::var("IMAP_PORT")
-            .unwrap_or_default()
-            .parse::<u16>()
-            .unwrap_or(993),
-        imap_domain: env::var("IMAP_DOMAIN").expect("IMAP_DOMAIN must be set"),
-        imap_username: env::var("IMAP_USERNAME").expect("IMAP_USERNAME must be set"),
-        imap_password: env::var("IMAP_PASSWORD").expect("IMAP_PASSWORD must be set"),
-        discord_webhook_url: env::var("DISCORD_WEBHOOK_URL")
-            .expect("DISCORD_WEBHOOK_URL must be set"),
+async fn send_discord_notification(
+    webhook_url: &str,
+    from: &str,
+    subject: &str,
+    content: &str,
+) -> Result<()> {
+    let req_body = WebhookBody {
+        username: Some(from.to_string()),
+        avatar_url: None,
+        content: None,
+        embeds: Some(vec![Embed {
+            title: subject.to_string(),
+            url: "https://www.stb.tsukuba.ac.jp/webmail".to_string(),
+            author: Some(EmbedAuthor {
+                name: from.to_string(),
+                url: None,
+                icon_url: None,
+            }),
+            description: content.to_string(),
+        }]),
     };
-    let tls_connector = TlsConnector::builder().build()?;
 
-    let client = imap::connect(
-        (config.imap_host, config.imap_port),
-        config.imap_domain,
-        &tls_connector,
-    )?;
+    let client = reqwest::Client::new();
+    let res = client.post(webhook_url).json(&req_body).send().await?;
 
-    // the client we have here is unauthenticated.
-    // to do anything useful with the e-mails, we need to log in
-    let mut imap_session = client
-        .login(config.imap_username, config.imap_password)
-        .map_err(|e| e.0)?;
-
-    imap_session.select("INBOX")?;
-    let mut last_seen_uid = imap_session.uid_search("ALL")?.into_iter().max();
-
-    loop {
-        imap_session.idle()?.wait()?;
-
-        // 新しい UID を検索し、保持している UID より大きいものだけ処理する
-        let search_query = match last_seen_uid {
-            Some(uid) => format!("{}:*", uid + 1),
-            None => "1:*".to_string(),
-        };
-        let mut stored_uids: Vec<Uid> = imap_session
-            .uid_search(&search_query)?
-            .into_iter()
-            .filter(|uid| last_seen_uid.map_or(true, |last| *uid > last))
-            .collect();
-
-        if stored_uids.is_empty() {
-            continue;
-        }
-
-        stored_uids.sort_unstable();
-
-        for uid in stored_uids {
-            // RFC 822 dictates the format of the body of e-mails
-            let messages = imap_session.uid_fetch(uid.to_string(), "(UID RFC822)")?;
-            let message = match messages.iter().next() {
-                Some(m) => m,
-                None => {
-                    eprintln!("UID {} のメール取得に失敗しました。", uid);
-                    continue;
-                }
-            };
-
-            last_seen_uid = Some(uid);
-
-            // extract the message's body
-            let body = message.body().expect("message did not have a body!");
-            let body = std::str::from_utf8(body)
-                .expect("message was not valid utf-8")
-                .to_string();
-
-            let parsed = parse_mail(body.as_bytes())?;
-            let plain_body = if parsed.subparts.is_empty() {
-                if parsed.ctype.mimetype != "text/plain" {
-                    None
-                } else {
-                    parsed.get_body().ok()
-                }
-            } else {
-                parsed
-                    .subparts
-                    .iter()
-                    .find(|x| x.ctype.mimetype == "text/plain")
-                    .and_then(|x| x.get_body().ok())
-            };
-
-            let from = parsed
-                .get_headers()
-                .get_first_value("From")
-                .unwrap_or_else(|| "不明な送信者".to_string());
-
-            let subject = parsed
-                .get_headers()
-                .get_first_value("Subject")
-                .unwrap_or_else(|| "無題".to_string());
-
-            println!("新しいメールを受信しました: {} - {}", from, subject);
-
-            let req_body = WebhookBody {
-                username: Some(from.to_string()),
-                avatar_url: None,
-                content: None,
-                embeds: Some(vec![Embed {
-                    title: subject,
-                    url: "https://www.stb.tsukuba.ac.jp/webmail".to_string(),
-                    author: Some(EmbedAuthor {
-                        name: from,
-                        url: None,
-                        icon_url: None,
-                    }),
-                    description: plain_body.unwrap_or_else(|| "本文なし".to_string()),
-                }]),
-            };
-
-            let client = reqwest::Client::new();
-            let res = client
-                .post(&config.discord_webhook_url)
-                .json(&req_body)
-                .send()
-                .await?;
-
-            if !res.status().is_success() {
-                eprintln!("Failed to send webhook: {:?}", res.text().await?);
-            }
-        }
+    if !res.status().is_success() {
+        return Err(anyhow!(
+            "Failed to send Discord notification: {}",
+            res.status()
+        ));
     }
+
+    Ok(())
 }
