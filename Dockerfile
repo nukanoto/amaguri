@@ -1,4 +1,4 @@
-FROM rust:1.90-alpine as builder
+FROM rust:1.90-alpine AS builder
 
 RUN apk add --no-cache musl-dev libressl-dev
 
