@@ -9,6 +9,7 @@ use mailparse::{MailHeaderMap, parse_mail};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 
+#[derive(Debug)]
 struct Config {
     imap_host: String,
     imap_port: u16,
@@ -32,6 +33,8 @@ async fn main() -> Result<()> {
         discord_webhook_url: env::var("DISCORD_WEBHOOK_URL")
             .expect("DISCORD_WEBHOOK_URL must be set"),
     };
+
+    println!("Configuration: {:?}", config);
 
     let imap_addr = (config.imap_host.clone(), config.imap_port);
     let tcp_stream = TcpStream::connect(imap_addr).await?;
