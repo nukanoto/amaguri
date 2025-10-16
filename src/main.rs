@@ -1,10 +1,9 @@
 use std::env;
 
 use anyhow::{Result, anyhow};
-use async_imap::extensions::idle::IdleResponse;
+use async_imap::{extensions::idle::IdleResponse, types::Uid};
 use async_native_tls::TlsConnector;
 use futures::TryStreamExt;
-use imap::types::Uid;
 use mailparse::{MailHeaderMap, parse_mail};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;

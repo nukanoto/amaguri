@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
-imap = "2.4.1"
 mailparse = "0.16.1"
 async-imap = { version = "0.11.1", default-features = false, features = [
     "runtime-tokio",
