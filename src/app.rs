@@ -73,10 +73,11 @@ impl App {
         App { config }
     }
 
-    pub async fn run(&self) {
+    pub async fn run(&self) -> Result<()> {
         loop {
             if let Err(e) = self.check_imap().await {
                 eprintln!("Error during IMAP check: {:?}", e);
+                return Err(e);
             }
             sleep(Duration::from_millis(500)).await;
         }
@@ -161,12 +162,8 @@ impl App {
 
                 let notification_body = plain_body_text.unwrap_or("_No Content_");
 
-                self.send_discord_notification(
-                    &from,
-                    &subject,
-                    notification_body,
-                )
-                .await?;
+                self.send_discord_notification(&from, &subject, notification_body)
+                    .await?;
             }
         }
 

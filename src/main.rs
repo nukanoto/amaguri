@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     println!("Configuration: {:?}", config);
 
     let app = App::new(config);
-    app.run().await;
+    app.run().await?;
 
     Ok(())
 }
