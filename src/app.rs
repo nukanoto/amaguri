@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, sleep};
 
+const IMAP_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Debug, Clone)]
 pub struct App {
     config: Config,
@@ -79,7 +81,7 @@ impl App {
                 eprintln!("Error during IMAP check: {:?}", e);
                 return Err(e);
             }
-            sleep(Duration::from_millis(500)).await;
+            sleep(IMAP_CHECK_INTERVAL).await;
         }
     }
 
